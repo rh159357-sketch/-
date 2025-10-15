@@ -45,16 +45,34 @@ const DEFAULT_ITEMS = [
 ];
 
 function useLocalState(key, initial) {
-  const [state, setState] = useState(() => {
-    const raw = localStorage.getItem(key);
-    if (!raw) return initial;
-    try { return JSON.parse(raw); } catch { return initial; }
-  });
-  useEffect(() => { localStorage.setItem(key, JSON.stringify(state)); }, [key, state]);
+  const resolveInitial = () => (typeof initial === "function" ? initial() : initial);
+  const readFromStorage = () => {
+    if (typeof window === "undefined" || !window.localStorage) return resolveInitial();
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (!raw) return resolveInitial();
+      return JSON.parse(raw);
+    } catch {
+      return resolveInitial();
+    }
+  };
+
+  const [state, setState] = useState(readFromStorage);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || !window.localStorage) return;
+    try {
+      window.localStorage.setItem(key, JSON.stringify(state));
+    } catch {
+      // Ignore write errors (e.g. storage disabled)
+    }
+  }, [key, state]);
+
   return [state, setState];
 }
 
 export default function App() {
+  useGlobalStyles();
   const [items, setItems] = useLocalState("items", DEFAULT_ITEMS);
   const [rentals, setRentals] = useLocalState("rentals", []);
   const [tab, setTab] = useState("실시간 현황+대여신청");
@@ -437,13 +455,30 @@ function Field({ label, children }) {
   );
 }
 
-// 공통 스타일
-const style = document.createElement("style");
-style.innerHTML = `
+// 공통 스타일 – 문서 객체가 있는 경우에만 단 한 번 삽입
+function useGlobalStyles() {
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const STYLE_ID = "assistive-rental-styles";
+    let style = document.getElementById(STYLE_ID);
+    let inserted = false;
+    if (!style) {
+      style = document.createElement("style");
+      style.id = STYLE_ID;
+      style.innerHTML = `
   .input { border: 1px solid #e5e7eb; border-radius: 0.5rem; padding: 0.5rem 0.75rem; width: 100%; }
   .btn { padding: 0.5rem 0.75rem; border-radius: 0.5rem; font-size: 0.875rem; font-weight: 600; }
 `;
-document.head.appendChild(style);
+      document.head.appendChild(style);
+      inserted = true;
+    }
+    return () => {
+      if (inserted && style?.parentNode) {
+        style.parentNode.removeChild(style);
+      }
+    };
+  }, []);
+}
 
 function FeatureList() {
   return (
